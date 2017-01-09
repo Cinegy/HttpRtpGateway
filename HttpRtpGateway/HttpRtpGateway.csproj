@@ -67,7 +67,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Logging\ElasticSearchTarget.cs" />
-    <Compile Include="Logging\LogEventInfo.cs" />
+    <Compile Include="Logging\LogStructuredObject.cs" />
+    <Compile Include="Logging\TelemetryLogEventInfo.cs" />
     <Compile Include="Logging\LogSetup.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="Program.cs" />

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Newtonsoft.Json;
 using NLog;
 using NLog.Layouts;
@@ -50,8 +51,8 @@ namespace HttpRtpGateway.Logging
                 {
                     "@Product", new
                     {
-                        Name = "HttpRtpGateway",
-                        Version = "0.0.1"   //TODO: Stop this being hardcoded
+                        Name = Assembly.GetExecutingAssembly().GetName().Name,
+                        Version = Assembly.GetExecutingAssembly().GetName().Version.ToString()
                     }
                 }
             };

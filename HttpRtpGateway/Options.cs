@@ -49,5 +49,9 @@ namespace HttpRtpGateway
         [Option('a', "adapter", Required = false,
         HelpText = "IP address of the adapter to output multicast packets (if not set, tries first binding adapter).")]
         public string AdapterAddress { get; set; }
+
+        [Option('u', "sourceurl", Required = true,
+        HelpText = "Source URL from which to download MPEGTS stream")]
+        public string SourceUrl { get; set; }
     }
 }
