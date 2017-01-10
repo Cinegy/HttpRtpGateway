@@ -2,6 +2,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -17,17 +18,8 @@ namespace HttpRtpGateway
         private static bool _pendingExit;
         private static StreamOptions _options;
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-
-        /*
-                private enum ExitCodes
-                {
-                    NullOutputWriter = 100,
-                    InvalidContext = 101,
-                    UrlAccessDenied = 102,
-                    UnknownError = 2000
-                }
-        */
-
+        private static UdpClient _udpClient;
+        
         #region Main, Constructors and Destructors
 
         private static int Main(string[] args)
@@ -73,6 +65,8 @@ namespace HttpRtpGateway
             Console.WriteLine("Running");
             Console.WriteLine("Hit CTRL-C to quit");
 
+            _udpClient = PrepareOutputClient(_options.MulticastAddress, _options.MulticastGroup);
+
             StartDownload();
 
             while (!_pendingExit)
@@ -89,70 +83,47 @@ namespace HttpRtpGateway
 
         private static void StartDownload()
         {
-
-            var wc = new WebClient();
             var uri = new Uri(_options.SourceUrl);
 
-            //uri = new Uri("https://1drv.ms/v/s!AusAyiZlw38aiuhc-5BISltUSbq4dQ");
+            var httpclient = new HttpClient {MaxResponseContentBufferSize = 100000};
+            
+            var stream = httpclient.GetStreamAsync(uri).Result;
 
-            HttpGetForLargeFileInRightWay(uri).ConfigureAwait(true);
+            Console.WriteLine("Starting to re-stream RTP packets");
 
+            //this is horribly 'rough' - will shortly route this data through my RTP decoder
+            //and then retime against PCR
 
-        }
+            var buff = new byte[1328];
 
-        public static async Task HttpGetPartialDownloadTest(Uri uri)
-        {
-            //ServicePointManager.CertificatePolicy = delegate { return true; };
-
-            var httpclient = new HttpClient();
-            var response = await httpclient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
-
-            string text = null;
-
-            while (true)
+            var count = stream.Read(buff, 0, buff.Length);
+            while (count>0)
             {
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                {
-                    var bytes = new byte[1000];
-                    var bytesread = stream.Read(bytes, 0, 1000);
-
-                    Console.WriteLine($"Read: {bytesread} bytes");
-                }
-            }
-
-        }
-
-        static async Task HttpGetForLargeFileInRightWay(Uri uri)
-        {
-            using (HttpClient client = new HttpClient())
-            {
-                client.MaxResponseContentBufferSize = 1388;
-                while (true)
-                {
-
-                    var buff = await client.GetByteArrayAsync(uri);
-                    Console.WriteLine("Buffd");
-                }
-
-
-
-
-                //using (HttpResponseMessage response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead))
-                //using (Stream streamToReadFrom = await response.Content.ReadAsStreamAsync())
-                //{
-                //    string fileToWriteTo = Path.GetTempFileName();
-
-                //    Console.WriteLine($"Outputting to temp file: {fileToWriteTo}");
-
-                //    using (Stream streamToWriteTo = File.Open(fileToWriteTo, FileMode.Create))
-                //    {
-                //        await streamToReadFrom.CopyToAsync(streamToWriteTo);
-                //        Console.WriteLine($"Something happened...");
-                //    }
-                //}
+                count = stream.Read(buff, 0, buff.Length);
+                _udpClient.Send(buff, buff.Length);
             }
         }
 
+        private static UdpClient PrepareOutputClient(string multicastAddress, int multicastGroup)
+        {
+            //_receiving = true;
+
+            var outputIp = _options.AdapterAddress != null ? IPAddress.Parse(_options.AdapterAddress) : IPAddress.Any;
+            Console.WriteLine($"Outputting multicast data to {multicastAddress}:{multicastGroup} via adapter {outputIp}");
+
+            var client = new UdpClient { ExclusiveAddressUse = false };
+            var localEp = new IPEndPoint(outputIp, multicastGroup);
+
+            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            client.ExclusiveAddressUse = false;
+            client.Client.Bind(localEp);
+
+            var parsedMcastAddr = IPAddress.Parse(multicastAddress);
+            client.Connect(parsedMcastAddr, multicastGroup);
+
+            return client;
+        }
+        
         #endregion
 
         #region Events
