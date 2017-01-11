@@ -65,7 +65,7 @@ namespace HttpRtpGateway
             Console.WriteLine("Running");
             Console.WriteLine("Hit CTRL-C to quit");
 
-            _udpClient = PrepareOutputClient(_options.MulticastAddress, _options.MulticastGroup);
+            PrepareOutputClient();
 
             StartDownload();
 
@@ -85,7 +85,7 @@ namespace HttpRtpGateway
         {
             var uri = new Uri(_options.SourceUrl);
 
-            var httpclient = new HttpClient {MaxResponseContentBufferSize = 100000};
+            var httpclient = new HttpClient();
             
             var stream = httpclient.GetStreamAsync(uri).Result;
 
@@ -94,34 +94,34 @@ namespace HttpRtpGateway
             //this is horribly 'rough' - will shortly route this data through my RTP decoder
             //and then retime against PCR
 
-            var buff = new byte[1328];
+            var buff = new byte[1500];
 
             var count = stream.Read(buff, 0, buff.Length);
             while (count>0)
             {
                 count = stream.Read(buff, 0, buff.Length);
                 _udpClient.Send(buff, buff.Length);
+                if(count!=1316)
+                {
+                    Console.WriteLine($"Byte array returned {count} bytes (expected 1316)");
+                }
             }
         }
 
-        private static UdpClient PrepareOutputClient(string multicastAddress, int multicastGroup)
+        private static void PrepareOutputClient()
         {
-            //_receiving = true;
-
             var outputIp = _options.AdapterAddress != null ? IPAddress.Parse(_options.AdapterAddress) : IPAddress.Any;
-            Console.WriteLine($"Outputting multicast data to {multicastAddress}:{multicastGroup} via adapter {outputIp}");
+            Console.WriteLine($"Outputting multicast data to {_options.MulticastAddress}:{_options.MulticastGroup} via adapter {outputIp}");
 
-            var client = new UdpClient { ExclusiveAddressUse = false };
-            var localEp = new IPEndPoint(outputIp, multicastGroup);
+            _udpClient = new UdpClient { ExclusiveAddressUse = false };
+            var localEp = new IPEndPoint(outputIp, _options.MulticastGroup);
 
-            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            client.ExclusiveAddressUse = false;
-            client.Client.Bind(localEp);
+            _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _udpClient.ExclusiveAddressUse = false;
+            _udpClient.Client.Bind(localEp);
 
-            var parsedMcastAddr = IPAddress.Parse(multicastAddress);
-            client.Connect(parsedMcastAddr, multicastGroup);
-
-            return client;
+            var parsedMcastAddr = IPAddress.Parse(_options.MulticastAddress);
+            _udpClient.Connect(parsedMcastAddr, _options.MulticastGroup);            
         }
         
         #endregion

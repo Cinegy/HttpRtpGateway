@@ -1,0 +1,17 @@
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\HttpRtpGateway.exe.config
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\HttpRtpGateway.exe
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\HttpRtpGateway.pdb
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Cinegy.TsDecoder.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\CommandLine.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Elasticsearch.Net.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Newtonsoft.Json.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\NLog.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\NLog.Targets.ElasticSearch.dll
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\CommandLine.xml
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Elasticsearch.Net.pdb
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Elasticsearch.Net.xml
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\Newtonsoft.Json.xml
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\bin\Debug\NLog.xml
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\obj\Debug\HttpRtpGateway.csprojResolveAssemblyReference.cache
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\obj\Debug\HttpRtpGateway.exe
+C:\Data\Dev\Git\httprtpgateway\HttpRtpGateway\obj\Debug\HttpRtpGateway.pdb
