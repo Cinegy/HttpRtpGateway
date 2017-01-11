@@ -1,4 +1,19 @@
-﻿using System;
+﻿/*   Copyright 2017 Cinegy GmbH
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -10,6 +25,8 @@ using System.Threading.Tasks;
 using CommandLine;
 using HttpRtpGateway.Logging;
 using NLog;
+using Cinegy.TsDecoder.TransportStream;
+using Cinegy.TsDecoder.TransportStream.Buffers;
 
 namespace HttpRtpGateway
 {
@@ -19,7 +36,14 @@ namespace HttpRtpGateway
         private static StreamOptions _options;
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static UdpClient _udpClient;
-        
+        private static TsDecoder _tsDecoder;
+        private static bool _warmedUp = false;
+        private static ulong _referencePcr;
+        private static ulong _referenceTime;
+        private static ulong _lastPcr = 0;
+
+        private static readonly RingBuffer RingBuffer = new RingBuffer();
+
         #region Main, Constructors and Destructors
 
         private static int Main(string[] args)
@@ -66,8 +90,14 @@ namespace HttpRtpGateway
             Console.WriteLine("Hit CTRL-C to quit");
 
             PrepareOutputClient();
+            
+            var downloadThread = new Thread(StartDownload) { Priority = ThreadPriority.Highest };
 
-            StartDownload();
+            downloadThread.Start();
+
+            var queueThread = new Thread(ProcessQueueWorkerThread) { Priority = ThreadPriority.AboveNormal };
+
+            queueThread.Start();
 
             while (!_pendingExit)
             {
@@ -83,24 +113,27 @@ namespace HttpRtpGateway
 
         private static void StartDownload()
         {
-            var uri = new Uri(_options.SourceUrl);
-
+            _tsDecoder = new TsDecoder();
             var httpclient = new HttpClient();
             
-            var stream = httpclient.GetStreamAsync(uri).Result;
+            var stream = httpclient.GetStreamAsync(_options.SourceUrl).Result;
 
             Console.WriteLine("Starting to re-stream RTP packets");
 
             //this is horribly 'rough' - will shortly route this data through my RTP decoder
             //and then retime against PCR
-
+            
             var buff = new byte[1500];
 
             var count = stream.Read(buff, 0, buff.Length);
             while (count>0)
             {
                 count = stream.Read(buff, 0, buff.Length);
-                _udpClient.Send(buff, buff.Length);
+
+                //TODO: At the moment, this ring buffer is just fixed at ~64,000 elements, which might be too little at higher rates...
+                RingBuffer.Add(ref buff);
+                
+                //TODO: This is just testing code - need to make proper test methods and run mis-aligned data in to validate
                 if(count!=1316)
                 {
                     Console.WriteLine($"Byte array returned {count} bytes (expected 1316)");
@@ -123,7 +156,113 @@ namespace HttpRtpGateway
             var parsedMcastAddr = IPAddress.Parse(_options.MulticastAddress);
             _udpClient.Connect(parsedMcastAddr, _options.MulticastGroup);            
         }
-        
+
+        private static void ProcessQueueWorkerThread()
+        {
+            var dataBuffer = new byte[12 + (188 * 7)];
+
+            while (_pendingExit != true)
+            {
+                int dataSize;
+                long timestamp;
+                
+                try
+                {
+                    lock (RingBuffer)
+                    {
+                        var capacity = RingBuffer.Remove(ref dataBuffer, out dataSize, out timestamp);
+
+                        if (capacity > 0)
+                        {
+                            dataBuffer = new byte[capacity];
+                            continue;
+                        }
+
+                        if (dataBuffer == null) continue;
+                        
+                        var tsDiff = (int)(RingBuffer.CurrentTimestamp() - timestamp);
+
+                        var tsPackets = TsPacketFactory.GetTsPacketsFromData(dataBuffer);
+
+                        if (tsPackets == null)
+                        {
+                            Logger.Log(new TelemetryLogEventInfo { Level = LogLevel.Info, Key = "NullPackets", Message = "Packet recieved with no detected TS packets" });
+                            continue;
+                        }
+
+                        //this PCR retiming does not work yet...
+                        //foreach(var tsPacket in tsPackets)
+                        //{
+                        //    var pcrDrift = CheckPcr(tsPacket);
+
+                        //    if (pcrDrift < 1) continue;
+
+                        //    if (pcrDrift < 5000)
+                        //    {
+                        //        Console.WriteLine($"Pcrdrift: {pcrDrift}");
+                        //        Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                        //        Console.WriteLine($"Sleeping for: {5000 - pcrDrift}");
+                        //        Thread.Sleep(5000 - pcrDrift);
+                        //        Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+
+                        //    }
+                        //}
+
+                        _udpClient.Send(dataBuffer, dataBuffer.Length);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log(new TelemetryLogEventInfo { Level = LogLevel.Info, Message = $@"Unhandled exception within network receiver: {ex.Message}" });
+                }
+            }
+
+            Logger.Log(new TelemetryLogEventInfo { Level = LogLevel.Info, Message = "Stopping analysis thread due to exit request." });
+        }
+
+        private static int CheckPcr(TsPacket tsPacket)
+        {
+            if (!tsPacket.AdaptationFieldExists) return 0;
+            if (!tsPacket.AdaptationField.PcrFlag) return 0;
+            if (tsPacket.AdaptationField.FieldSize < 1) return 0;
+
+            if (tsPacket.AdaptationField.DiscontinuityIndicator)
+            {
+                Console.WriteLine("Adaptation field discont indicator");
+                return 0;
+            }
+
+            if (_lastPcr != 0)
+            {
+                var latestDelta = tsPacket.AdaptationField.Pcr - _lastPcr;
+               
+                var elapsedPcr = (long)(tsPacket.AdaptationField.Pcr - _referencePcr);
+                var elapsedClock = (long)((DateTime.UtcNow.Ticks * 2.7) - _referenceTime);
+                var drift = (int)(elapsedClock - elapsedPcr) / 27000;
+                
+                drift = (int)(elapsedPcr - elapsedClock) / 27000;
+
+                return drift;
+            }
+            else
+            {
+                //first PCR value - set up reference values
+                _referencePcr = tsPacket.AdaptationField.Pcr;
+                _referenceTime = (ulong)(DateTime.UtcNow.Ticks * 2.7);
+            }
+
+            //if (_largePcrDriftCount > 5)
+            //{
+            //    //exceeded PCR drift ceiling - reset clocks
+            //    _referencePcr = tsPacket.AdaptationField.Pcr;
+            //    _referenceTime = (ulong)(DateTime.UtcNow.Ticks * 2.7);
+            //}
+
+            _lastPcr = tsPacket.AdaptationField.Pcr;
+
+            return 0;
+        }
+
         #endregion
 
         #region Events
