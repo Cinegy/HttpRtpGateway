@@ -26,7 +26,7 @@ using CommandLine;
 using HttpRtpGateway.Logging;
 using NLog;
 using Cinegy.TsDecoder.TransportStream;
-using Cinegy.TsDecoder.TransportStream.Buffers;
+using Cinegy.TsDecoder.Buffers;
 
 namespace HttpRtpGateway
 {
@@ -42,6 +42,7 @@ namespace HttpRtpGateway
         private static ulong _referenceTime;
         private static ulong _lastPcr = 0;
 
+
         private static readonly RingBuffer RingBuffer = new RingBuffer();
 
         #region Main, Constructors and Destructors
@@ -54,7 +55,7 @@ namespace HttpRtpGateway
             return result.MapResult(
                 Run,
                 errs => CheckArgumentErrors());
-            
+
         }
 
         ~Program()
@@ -77,7 +78,7 @@ namespace HttpRtpGateway
         private static int Run(StreamOptions options)
         {
             Console.CancelKeyPress += Console_CancelKeyPress;
-            
+
             _options = options;
 
             LogSetup.ConfigureLogger(_options);
@@ -85,12 +86,12 @@ namespace HttpRtpGateway
             var location = Assembly.GetExecutingAssembly().Location;
             if (location != null)
                 Logger.Info($"Cinegy HTTP to RTP gateway tool (Built: {File.GetCreationTime(location)})\n");
-            
+
             Console.WriteLine("Running");
             Console.WriteLine("Hit CTRL-C to quit");
 
             PrepareOutputClient();
-            
+
             var downloadThread = new Thread(StartDownload) { Priority = ThreadPriority.Highest };
 
             downloadThread.Start();
@@ -115,26 +116,45 @@ namespace HttpRtpGateway
         {
             _tsDecoder = new TsDecoder();
             var httpclient = new HttpClient();
-            
+
             var stream = httpclient.GetStreamAsync(_options.SourceUrl).Result;
 
             Console.WriteLine("Starting to re-stream RTP packets");
 
             //this is horribly 'rough' - will shortly route this data through my RTP decoder
             //and then retime against PCR
-            
+
             var buff = new byte[1500];
 
             var count = stream.Read(buff, 0, buff.Length);
-            while (count>0)
+            while (count > 0)
             {
                 count = stream.Read(buff, 0, buff.Length);
 
-                //TODO: At the moment, this ring buffer is just fixed at ~64,000 elements, which might be too little at higher rates...
-                RingBuffer.Add(ref buff);
-                
+                CheckPcr(buff);
+
+                if (_lastPcr > 0)
+                {
+                    //add to buffer once we have a PCR, and set timestamp to the earliest playback time
+                    var pcrDelta = _lastPcr - _referencePcr;
+
+                    var span = new TimeSpan((long)(pcrDelta / 2.7));
+                    //var broadcastTime = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
+
+                    var broadcastTime = _referenceTime + (pcrDelta / 2.7) + (TimeSpan.TicksPerSecond/4);
+
+                    //if (DateTime.UtcNow.Millisecond%400 == 0)
+                    //{
+                    //    Console.WriteLine("PCR Delta: " + span);
+                    //    Console.WriteLine("Broadcast time: {0}", new TimeSpan((long)(broadcastTime)));
+                    //}
+                    //pcrDelta = 0;
+
+                    RingBuffer.Add(ref buff, (long)broadcastTime);
+                }
+
                 //TODO: This is just testing code - need to make proper test methods and run mis-aligned data in to validate
-                if(count!=1316)
+                if (count != 1316)
                 {
                     Console.WriteLine($"Byte array returned {count} bytes (expected 1316)");
                 }
@@ -154,7 +174,7 @@ namespace HttpRtpGateway
             _udpClient.Client.Bind(localEp);
 
             var parsedMcastAddr = IPAddress.Parse(_options.MulticastAddress);
-            _udpClient.Connect(parsedMcastAddr, _options.MulticastGroup);            
+            _udpClient.Connect(parsedMcastAddr, _options.MulticastGroup);
         }
 
         private static void ProcessQueueWorkerThread()
@@ -163,13 +183,12 @@ namespace HttpRtpGateway
 
             while (_pendingExit != true)
             {
-                int dataSize;
-                long timestamp;
-                
                 try
                 {
                     lock (RingBuffer)
                     {
+                        int dataSize;
+                        long timestamp;
                         var capacity = RingBuffer.Remove(ref dataBuffer, out dataSize, out timestamp);
 
                         if (capacity > 0)
@@ -180,35 +199,42 @@ namespace HttpRtpGateway
 
                         if (dataBuffer == null) continue;
                         
-                        var tsDiff = (int)(RingBuffer.CurrentTimestamp() - timestamp);
-
-                        var tsPackets = TsPacketFactory.GetTsPacketsFromData(dataBuffer);
-
-                        if (tsPackets == null)
+                        if (_lastPcr < 1)
                         {
-                            Logger.Log(new TelemetryLogEventInfo { Level = LogLevel.Info, Key = "NullPackets", Message = "Packet recieved with no detected TS packets" });
-                            continue;
+                            Console.WriteLine("Something crazy...");
                         }
 
-                        //this PCR retiming does not work yet...
-                        //foreach(var tsPacket in tsPackets)
-                        //{
-                        //    var pcrDrift = CheckPcr(tsPacket);
+                        //var elapsedClock = (long)((DateTime.UtcNow.Ticks * 2.7) - _referenceTime);
 
-                        //    if (pcrDrift < 1) continue;
+                        var waitTime = (timestamp - (DateTime.UtcNow.Ticks))/ TimeSpan.TicksPerMillisecond;
 
-                        //    if (pcrDrift < 5000)
-                        //    {
-                        //        Console.WriteLine($"Pcrdrift: {pcrDrift}");
-                        //        Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
-                        //        Console.WriteLine($"Sleeping for: {5000 - pcrDrift}");
-                        //        Thread.Sleep(5000 - pcrDrift);
-                        //        Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                        if ((waitTime < 2000) & (waitTime>0))
+                        {
+                            if (waitTime > 40)
+                            {
+                                Console.WriteLine($"Waittime: {waitTime}");
+                                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                                Console.WriteLine($"Sleeping for: {waitTime}");
+                            }
 
-                        //    }
-                        //}
+                            Thread.Sleep((int)waitTime);
 
-                        _udpClient.Send(dataBuffer, dataBuffer.Length);
+                            if (waitTime > 40)
+                            {
+                                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                            }
+
+                            _udpClient.Send(dataBuffer, dataBuffer.Length);
+                        }
+                        else if(waitTime > -50)
+                        {
+                            _udpClient.Send(dataBuffer, dataBuffer.Length);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Crazy wait time! " + waitTime);
+                        }
+                        
                     }
                 }
                 catch (Exception ex)
@@ -220,7 +246,44 @@ namespace HttpRtpGateway
             Logger.Log(new TelemetryLogEventInfo { Level = LogLevel.Info, Message = "Stopping analysis thread due to exit request." });
         }
 
-        private static int CheckPcr(TsPacket tsPacket)
+        private static void CheckPcr(byte[] dataBuffer)
+        {
+            var tsPackets = TsPacketFactory.GetTsPacketsFromData(dataBuffer);
+
+            if (tsPackets == null)
+            {
+                Logger.Log(new TelemetryLogEventInfo
+                {
+                    Level = LogLevel.Info,
+                    Key = "NullPackets",
+                    Message = "Packet recieved with no detected TS packets"
+                });
+                return;
+            }
+
+            foreach (var tsPacket in tsPackets)
+            {
+                if (!tsPacket.AdaptationFieldExists) continue;
+                if (!tsPacket.AdaptationField.PcrFlag) continue;
+                if (tsPacket.AdaptationField.FieldSize < 1) continue;
+
+                if (tsPacket.AdaptationField.DiscontinuityIndicator)
+                {
+                    Console.WriteLine("Adaptation field discont indicator");
+                    continue;
+                }
+
+                if (_lastPcr == 0)
+                {
+                    _referencePcr = tsPacket.AdaptationField.Pcr;
+                    _referenceTime = (ulong)(DateTime.UtcNow.Ticks);
+                }
+
+                _lastPcr = tsPacket.AdaptationField.Pcr;
+            }
+        }
+
+        private static int CheckPcrDrift(TsPacket tsPacket)
         {
             if (!tsPacket.AdaptationFieldExists) return 0;
             if (!tsPacket.AdaptationField.PcrFlag) return 0;
@@ -235,11 +298,11 @@ namespace HttpRtpGateway
             if (_lastPcr != 0)
             {
                 var latestDelta = tsPacket.AdaptationField.Pcr - _lastPcr;
-               
+
                 var elapsedPcr = (long)(tsPacket.AdaptationField.Pcr - _referencePcr);
                 var elapsedClock = (long)((DateTime.UtcNow.Ticks * 2.7) - _referenceTime);
                 var drift = (int)(elapsedClock - elapsedPcr) / 27000;
-                
+
                 drift = (int)(elapsedPcr - elapsedClock) / 27000;
 
                 return drift;
@@ -248,7 +311,7 @@ namespace HttpRtpGateway
             {
                 //first PCR value - set up reference values
                 _referencePcr = tsPacket.AdaptationField.Pcr;
-                _referenceTime = (ulong)(DateTime.UtcNow.Ticks * 2.7);
+                _referenceTime = (ulong)(DateTime.UtcNow.Ticks);
             }
 
             //if (_largePcrDriftCount > 5)
