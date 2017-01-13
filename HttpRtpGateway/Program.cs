@@ -41,6 +41,7 @@ namespace HttpRtpGateway
         private static ulong _referencePcr;
         private static ulong _referenceTime;
         private static ulong _lastPcr = 0;
+        private static int _longestWait = 0;
 
 
         private static readonly RingBuffer RingBuffer = new RingBuffer();
@@ -102,6 +103,10 @@ namespace HttpRtpGateway
 
             while (!_pendingExit)
             {
+                Console.Clear();
+                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                Console.WriteLine($"Longest Wait:{_longestWait}");
+                _longestWait = 0;
                 Thread.Sleep(100);
             }
 
@@ -141,7 +146,7 @@ namespace HttpRtpGateway
                     var span = new TimeSpan((long)(pcrDelta / 2.7));
                     //var broadcastTime = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
 
-                    var broadcastTime = _referenceTime + (pcrDelta / 2.7) + (TimeSpan.TicksPerSecond/4);
+                    var broadcastTime = _referenceTime + (pcrDelta / 2.7) + (TimeSpan.TicksPerSecond*1);
 
                     //if (DateTime.UtcNow.Millisecond%400 == 0)
                     //{
@@ -201,14 +206,16 @@ namespace HttpRtpGateway
                         
                         if (_lastPcr < 1)
                         {
-                            Console.WriteLine("Something crazy...");
+                            continue;
                         }
-
+                        
                         //var elapsedClock = (long)((DateTime.UtcNow.Ticks * 2.7) - _referenceTime);
 
                         var waitTime = (timestamp - (DateTime.UtcNow.Ticks))/ TimeSpan.TicksPerMillisecond;
 
-                        if ((waitTime < 2000) & (waitTime>0))
+                        if (_longestWait < waitTime) _longestWait = (int)waitTime;
+
+                        if ((waitTime < 8000) & (waitTime>0))
                         {
                             if (waitTime > 40)
                             {
@@ -219,9 +226,10 @@ namespace HttpRtpGateway
 
                             Thread.Sleep((int)waitTime);
 
-                            if (waitTime > 40)
+                            if (RingBuffer.BufferFullness() < 40)
                             {
-                                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
+                                //buffer exhausted - reset
+                                _lastPcr = 0;
                             }
 
                             _udpClient.Send(dataBuffer, dataBuffer.Length);
