@@ -43,13 +43,13 @@ namespace HttpRtpGateway.Logging
             object complexPayloadObject = null;
             var headerTable = new Dictionary<string, object>
             {
-                { "@Level", info.Level.ToString() },
-                { "@Time", info.TimeStamp.ToUniversalTime().ToString("o") },
-                { "@Tags", string.Join(",", _tags) },
-                { "@Host", Environment.MachineName },
-                { "@Logger", info.LoggerName },
+                { "Level", info.Level.ToString() },
+                { "Time", info.TimeStamp.ToUniversalTime().ToString("o") },
+                { "Tags", string.Join(",", _tags) },
+                { "Host", Environment.MachineName },
+                { "Logger", info.LoggerName },
                 {
-                    "@Product", new
+                    "Product", new
                     {
                         Name = Assembly.GetExecutingAssembly().GetName().Name,
                         Version = Assembly.GetExecutingAssembly().GetName().Version.ToString()
@@ -57,23 +57,23 @@ namespace HttpRtpGateway.Logging
                 }
             };
 
-            if (!string.IsNullOrWhiteSpace(info.Message)) headerTable.Add("@Message", info.Message);
+            if (!string.IsNullOrWhiteSpace(info.Message)) headerTable.Add("Message", info.Message);
 
             var telemetryInfo = info as TelemetryLogEventInfo;
             if (telemetryInfo != null)
             {
-                headerTable.Add("@Key", telemetryInfo.Key ?? "Generic");
+                headerTable.Add("Key", telemetryInfo.Key ?? "Generic");
 
                 if (telemetryInfo.TelemetryObject != null)
                 {
                     var type = telemetryInfo.TelemetryObject.GetType();
                     if (type.IsClass && type != typeof(string)) complexPayloadObject = telemetryInfo.TelemetryObject;
-                    else headerTable.Add("@Payload", telemetryInfo.TelemetryObject);
+                    else headerTable.Add("Payload", telemetryInfo.TelemetryObject);
                 }
             }
             else
             {
-                headerTable.Add("@Key", "Message");
+                headerTable.Add("Key", "Message");
             }
 
             var header = JsonConvert.SerializeObject(headerTable, JsonSerializerSettings);

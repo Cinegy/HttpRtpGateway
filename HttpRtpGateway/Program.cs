@@ -50,7 +50,7 @@ namespace HttpRtpGateway
 
         private static int Main(string[] args)
         {
-
+            Console.CursorVisible = false;
             var result = Parser.Default.ParseArguments<StreamOptions>(args);
 
             return result.MapResult(
@@ -86,11 +86,12 @@ namespace HttpRtpGateway
 
             var location = Assembly.GetExecutingAssembly().Location;
             if (location != null)
-                Logger.Info($"Cinegy HTTP to RTP gateway tool (Built: {File.GetCreationTime(location)})\n");
+                Logger.Info($"Cinegy HTTP to RTP gateway tool (Built: {File.GetCreationTime(location).ToLongDateString()})");
+
 
             Console.WriteLine("Running");
             Console.WriteLine("Hit CTRL-C to quit");
-
+            
             PrepareOutputClient();
 
             var downloadThread = new Thread(StartDownload) { Priority = ThreadPriority.Highest };
@@ -101,11 +102,12 @@ namespace HttpRtpGateway
 
             queueThread.Start();
 
+
             while (!_pendingExit)
             {
-                Console.Clear();
-                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}");
-                Console.WriteLine($"Longest Wait:{_longestWait}");
+                Console.SetCursorPosition(0,4);
+                Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}\t\t\t");
+                Console.WriteLine($"Longest Wait:{_longestWait}\t\t\t");
                 _longestWait = 0;
                 Thread.Sleep(100);
             }
@@ -289,49 +291,6 @@ namespace HttpRtpGateway
 
                 _lastPcr = tsPacket.AdaptationField.Pcr;
             }
-        }
-
-        private static int CheckPcrDrift(TsPacket tsPacket)
-        {
-            if (!tsPacket.AdaptationFieldExists) return 0;
-            if (!tsPacket.AdaptationField.PcrFlag) return 0;
-            if (tsPacket.AdaptationField.FieldSize < 1) return 0;
-
-            if (tsPacket.AdaptationField.DiscontinuityIndicator)
-            {
-                Console.WriteLine("Adaptation field discont indicator");
-                return 0;
-            }
-
-            if (_lastPcr != 0)
-            {
-                var latestDelta = tsPacket.AdaptationField.Pcr - _lastPcr;
-
-                var elapsedPcr = (long)(tsPacket.AdaptationField.Pcr - _referencePcr);
-                var elapsedClock = (long)((DateTime.UtcNow.Ticks * 2.7) - _referenceTime);
-                var drift = (int)(elapsedClock - elapsedPcr) / 27000;
-
-                drift = (int)(elapsedPcr - elapsedClock) / 27000;
-
-                return drift;
-            }
-            else
-            {
-                //first PCR value - set up reference values
-                _referencePcr = tsPacket.AdaptationField.Pcr;
-                _referenceTime = (ulong)(DateTime.UtcNow.Ticks);
-            }
-
-            //if (_largePcrDriftCount > 5)
-            //{
-            //    //exceeded PCR drift ceiling - reset clocks
-            //    _referencePcr = tsPacket.AdaptationField.Pcr;
-            //    _referenceTime = (ulong)(DateTime.UtcNow.Ticks * 2.7);
-            //}
-
-            _lastPcr = tsPacket.AdaptationField.Pcr;
-
-            return 0;
         }
 
         #endregion
