@@ -34,6 +34,11 @@ namespace HttpRtpGateway.Logging
         {
             var indexNameParts = new List<string> { "HttpRtpGateway", "${date:format=yyyy.MM.dd}" };
 
+            if (!string.IsNullOrEmpty(options.OrganisationId))
+            {
+                indexNameParts = new List<string> { $"HttpRtpGateway-{options.OrganisationId}-", "${date:format=yyyy.MM.dd}" };
+            }
+
             var renderedIndex = Layout.FromString(string.Join("-", indexNameParts));
 
             var elasticSearchTarget = new ElasticSearchTarget
