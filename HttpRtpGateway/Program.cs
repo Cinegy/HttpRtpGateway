@@ -39,7 +39,6 @@ namespace HttpRtpGateway
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static UdpClient _udpClient;
         private static TsDecoder _tsDecoder;
-        private static bool _warmedUp = false;
         private static ulong _referencePcr;
         private static ulong _referenceTime;
         private static ulong _lastPcr;
@@ -55,7 +54,7 @@ namespace HttpRtpGateway
 
         private static int Main(string[] args)
         {
-            Console.CursorVisible = false;
+           // Console.CursorVisible = false;
             var result = Parser.Default.ParseArguments<StreamOptions>(args);
 
             return result.MapResult(
@@ -111,6 +110,7 @@ namespace HttpRtpGateway
             while (!_pendingExit)
             {
                 Console.SetCursorPosition(0, 4);
+                Console.WriteLine($"Buffer Time: {_options.BufferTime}ms");
                 Console.WriteLine($"Buffer fullness: {RingBuffer.BufferFullness()}\t\t\t");
                 Console.WriteLine($"Longest Wait:{_longestWait}\t\t\t");
                 _longestWait = 0;
@@ -196,16 +196,8 @@ namespace HttpRtpGateway
                 var pcrDelta = _lastPcr - _referencePcr;
 
                 var span = new TimeSpan((long)(pcrDelta / 2.7));
-                //var broadcastTime = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
 
-                var broadcastTime = _referenceTime + (pcrDelta / 2.7) + (TimeSpan.TicksPerSecond * 1);
-
-                //if (DateTime.UtcNow.Millisecond%400 == 0)
-                //{
-                //    Console.WriteLine("PCR Delta: " + span);
-                //    Console.WriteLine("Broadcast time: {0}", new TimeSpan((long)(broadcastTime)));
-                //}
-                //pcrDelta = 0;
+                var broadcastTime = _referenceTime + (pcrDelta / 2.7) + ((TimeSpan.TicksPerSecond / 1000) * _options.BufferTime);
 
                 RingBuffer.Add(ref data, (ulong)broadcastTime);
 
