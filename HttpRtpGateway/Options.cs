@@ -16,7 +16,7 @@ namespace HttpRtpGateway
         HelpText = "Enables telemetry logging to ElasticSearch.")]
         public bool TelemetryLogging { get; set; }
 
-        [Option('e', "elasticsearchurl", Required = false, Default = "https://es1.cinegy.com/",
+        [Option('e', "elasticsearchurl", Required = false, Default = "http://localhost:8000/",
         HelpText = "Optional URL to send telemetry logging (defaults to Cinegy public URL).")]
         public string ElasticSearchUrl { get; set; }
 
