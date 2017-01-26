@@ -36,7 +36,7 @@ namespace HttpRtpGateway.Logging
 
             if (!string.IsNullOrEmpty(options.OrganisationId))
             {
-                indexNameParts = new List<string> { $"HttpRtpGateway-{options.OrganisationId}-", "${date:format=yyyy.MM.dd}" };
+                indexNameParts = new List<string> { $"HttpRtpGateway-{options.OrganisationId}", "${date:format=yyyy.MM.dd}" };
             }
 
             var renderedIndex = Layout.FromString(string.Join("-", indexNameParts));
