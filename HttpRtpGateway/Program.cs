@@ -140,14 +140,14 @@ namespace HttpRtpGateway
 
                 var buff = new byte[250000];
 
-                var buffPos = 0;
-                var count = stream.Read(buff, buffPos, buff.Length);
+                var buffHighPos = 0;
+                var count = stream.Read(buff, buffHighPos, buff.Length);
                
                 while (count > 0)
                 {
-                    buffPos += count;
+                    buffHighPos += count;
 
-                    if (buffPos >= TsPacketSize*7)
+                    while (buffHighPos >= TsPacketSize*7)
                     {
                         //buffer now should be big enough to hold 7 ts packets - check sync and load up the ringbuffer
 
@@ -165,17 +165,11 @@ namespace HttpRtpGateway
                         AddDataToRingBuffer(ref data);
 
                         //copy residual data back into buffer and reset pos
-                        Buffer.BlockCopy(buff,data.Length,buff,buffPos,buffPos - data.Length);
-                        buffPos -= data.Length;
+                        Buffer.BlockCopy(buff,data.Length,buff,0,buffHighPos - data.Length);
+                        buffHighPos -= data.Length;
                     }
-
-                    //TODO: This is just testing code - need to make proper test methods and run mis-aligned data in to validate
-                    if (count != 1316)
-                    {
-                        Console.WriteLine($"Byte array returned {count} bytes (expected 1316)");
-                    }
-
-                    count = stream.Read(buff, buffPos, buff.Length - buffPos);
+                    
+                    count = stream.Read(buff, buffHighPos, buff.Length - buffHighPos);
                 }
 
             }
