@@ -1,6 +1,6 @@
-# Cinegy HTTP RTP Gateway - an AMWA Labs Project
+# Cinegy HTTP RTP Gateway
 
-This tool is all about moving broadcast-oriented streams over HTTP - and is being developed as part of the AMWA Labs project to determine next-generation workflows for the cloud-connected broadcaster. We're developing it in the open, and the main purpose of this tool is for experimentation, so don't expect stability or support!
+This tool is all about moving broadcast-oriented streams over HTTP, as an experiment to see how plain HTTP technology can provide the basics of error correction rather than using more complex plain UDP approaches. We're developing it in the open, and the main purpose of this tool is for experimentation, so don't expect stability or support!
 
 ## What can I do with it?
 
@@ -9,10 +9,6 @@ You can grab HTTP wrapped MPEG2 Transport Streams, and then have them carefully 
 ## Sounds too good to be true!
 
 It is - HTTP currently won't work for every scenario - you need a reasonable connection and latency to your source. However, we think it will work in a great deal of situations just fine - and it's firewall-friendly and well understood. We aim to prove it works well, and should be considered as a sensible way to move low-latency real-time streams of audio, video and data around for broadcasters. Or it will be really unstable in many cases and people will hate us. But at least we'll have evidence about what works and what does not.
-
-## Where do I find out more?
-
-Head over to the [AMWA website](http://www.amwa.tv/) and look up the AMWA Labs projects and get involved!
 
 ## Getting the tool
 
